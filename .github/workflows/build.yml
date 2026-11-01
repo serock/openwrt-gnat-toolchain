@@ -1,0 +1,37 @@
+name: build toolchain
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  build-ath79-toolchain:
+    name: Build ath79 generic toolchain
+    runs-on: ubuntu-latest
+    container:
+      image: alpine:3.22
+    steps:
+      - name: install build prerequisites
+        run: |
+          apk --quiet update
+          apk --quiet add argp-standalone bash bzip2 coreutils diffutils file findutils \
+            g++ gawk gcc gcc-gnat git grep gzip linux-headers make musl-fts-dev \
+            musl-libintl musl-obstack-dev ncurses-dev patch perl python3 rsync tar \
+            unzip wget
+      - name: add unprivileged user
+        run: |
+          adduser -g OpenWrt -s /bin/bash -D openwrt
+          su openwrt -c 'cat << EOF > /home/openwrt/.bashrc
+          export CHARSET=UTF-8
+          export LC_COLLATE=C
+          export LANG=C.UTF-8
+          EOF
+          '
+      - name: check out openwrt-gnat-toolchain
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      - name: clone openwrt
+        env:
+          BASH_ENV: /home/openwrt/.bashrc
+        run: su openwrt -c 'git clone --quiet --branch v25.12.6 --depth 1 https://github.com/openwrt/openwrt.git source'
+        shell: bash -e {0}
+        working-directory: /home/openwrt
+
