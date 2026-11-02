@@ -1,11 +1,11 @@
-name: build toolchain
+name: build
 on:
   workflow_dispatch:
 permissions:
   contents: read
 jobs:
-  build-ath79-toolchain:
-    name: Build ath79 generic toolchain
+  build-openwrt-toolchains:
+    name: Build openwrt toolchains
     runs-on: ubuntu-latest
     container:
       image: alpine:3.22
@@ -32,6 +32,63 @@ jobs:
         env:
           BASH_ENV: /home/openwrt/.bashrc
         run: su openwrt -c 'git clone --quiet --branch v25.12.6 --depth 1 https://github.com/openwrt/openwrt.git source'
-        shell: bash -e {0}
+        shell: bash
         working-directory: /home/openwrt
+      - name: update openwrt feeds
+        env:
+          BASH_ENV: /home/openwrt/.bashrc
+        run: su openwrt -c './scripts/feeds update -a'
+        shell: bash
+        working-directory: /home/openwrt/source
+      - name: install openwrt feeds
+        env:
+          BASH_ENV: /home/openwrt/.bashrc
+        run: su openwrt -c './scripts/feeds install -a'
+        shell: bash
+        working-directory: /home/openwrt/source
+      - name: apply patches
+        env:
+          BASH_ENV: /home/openwrt/.bashrc
+        run: |
+          su openwrt -c 'cp "$GITHUB_WORKSPACE/995-gnat-musl-libc.patch" ./toolchain/gcc/patches-14.x
+          cp "$GITHUB_WORKSPACE/openwrt-disable-linux-build.patch" .
+          cp "$GITHUB_WORKSPACE/openwrt-enable-gnat-ada-compiler.patch" .
+          patch --strip=1 --input=openwrt-disable-linux-build.patch
+          patch --strip=1 --input=openwrt-enable-gnat-ada-compiler.patch
+          rm openwrt-disable-linux-build.patch
+          rm openwrt-enable-gnat-ada-compiler.patch'
+        shell: bash
+        working-directory: /home/openwrt/source
+      - name: configure ipq806x generic
+        env:
+          BASH_ENV: /home/openwrt/.bashrc
+        run: |
+          su openwrt -c 'cp "$GITHUB_WORKSPACE/diffconfig-ipq806x-generic-xr500" .config
+          make defconfig'
+        shell: bash
+        working-directory: /home/openwrt/source
+      - name: build ipq806x generic toolchain
+        env:
+          BASH_ENV: /home/openwrt/.bashrc
+        run: |
+          su openwrt -c 'make toolchain/download
+          make --jobs=3 toolchain/install'
+        shell: bash
+        working-directory: /home/openwrt/source
+      - name: create ipq806x generic toolchain archive
+        id: toolchain-archive
+        env:
+          BASH_ENV: /home/openwrt/.bashrc
+        run: |
+          su openwrt -c 'make target/install
+          TOOLCHAIN_ARCHIVE=$(ls /home/openwrt/source/bin/targets/ipq806x/generic/openwrt-toolchain-*.tar.zst)
+          echo "TOOLCHAIN_ARCHIVE=$TOOLCHAIN_ARCHIVE" >> "$GITHUB_OUTPUT"'
+        shell: bash
+        working-directory: /home/openwrt/source
+      - name: upload artifact
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        with:
+          path: ${{ steps.toolchain-archive.outputs.TOOLCHAIN_ARCHIVE }}
+          overwrite: true
+          archive: false
 
