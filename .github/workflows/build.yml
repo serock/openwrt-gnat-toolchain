@@ -53,9 +53,13 @@ jobs:
       - name: create ipq806x generic toolchain archive
         id: toolchain-archive
         run: |
-          su openwrt -c 'make target/install
+          su openwrt -c 'make target/install'
           TOOLCHAIN_ARCHIVE=$(ls /home/openwrt/source/bin/targets/ipq806x/generic/openwrt-toolchain-*.tar.zst)
-          echo "TOOLCHAIN_ARCHIVE=$TOOLCHAIN_ARCHIVE" >> "$GITHUB_OUTPUT"'
+          if [ -z "$TOOLCHAIN_ARCHIVE" ]; then
+            echo "::error::No toolchain archive matching openwrt-toolchain-*.tar.zst found!"
+            exit 1
+          fi
+          echo "TOOLCHAIN_ARCHIVE=$TOOLCHAIN_ARCHIVE" >> "$GITHUB_OUTPUT"
         working-directory: /home/openwrt/source
       - name: upload artifact
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
