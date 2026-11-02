@@ -18,37 +18,19 @@ jobs:
             musl-libintl musl-obstack-dev ncurses-dev patch perl python3 rsync tar \
             unzip wget
       - name: add unprivileged user
-        run: |
-          adduser -g OpenWrt -s /bin/bash -D openwrt
-          su openwrt -c 'cat << EOF > /home/openwrt/.bashrc
-          export CHARSET=UTF-8
-          export LC_COLLATE=C
-          export LANG=C.UTF-8
-          EOF
-          '
+        run: adduser -g OpenWrt -s /bin/bash -D openwrt
       - name: check out openwrt-gnat-toolchain
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
       - name: clone openwrt
-        env:
-          BASH_ENV: /home/openwrt/.bashrc
         run: su openwrt -c 'git clone --quiet --branch v25.12.6 --depth 1 https://github.com/openwrt/openwrt.git source'
-        shell: bash
         working-directory: /home/openwrt
       - name: update openwrt feeds
-        env:
-          BASH_ENV: /home/openwrt/.bashrc
         run: su openwrt -c './scripts/feeds update -a'
-        shell: bash
         working-directory: /home/openwrt/source
       - name: install openwrt feeds
-        env:
-          BASH_ENV: /home/openwrt/.bashrc
         run: su openwrt -c './scripts/feeds install -a'
-        shell: bash
         working-directory: /home/openwrt/source
       - name: apply patches
-        env:
-          BASH_ENV: /home/openwrt/.bashrc
         run: |
           su openwrt -c 'cp "$GITHUB_WORKSPACE/995-gnat-musl-libc.patch" ./toolchain/gcc/patches-14.x
           cp "$GITHUB_WORKSPACE/openwrt-disable-linux-build.patch" .
@@ -57,33 +39,23 @@ jobs:
           patch --strip=1 --input=openwrt-enable-gnat-ada-compiler.patch
           rm openwrt-disable-linux-build.patch
           rm openwrt-enable-gnat-ada-compiler.patch'
-        shell: bash
         working-directory: /home/openwrt/source
       - name: configure ipq806x generic
-        env:
-          BASH_ENV: /home/openwrt/.bashrc
         run: |
           su openwrt -c 'cp "$GITHUB_WORKSPACE/diffconfig-ipq806x-generic-xr500" .config
           make defconfig'
-        shell: bash
         working-directory: /home/openwrt/source
       - name: build ipq806x generic toolchain
-        env:
-          BASH_ENV: /home/openwrt/.bashrc
         run: |
           su openwrt -c 'make toolchain/download
           make --jobs=3 toolchain/install'
-        shell: bash
         working-directory: /home/openwrt/source
       - name: create ipq806x generic toolchain archive
         id: toolchain-archive
-        env:
-          BASH_ENV: /home/openwrt/.bashrc
         run: |
           su openwrt -c 'make target/install
           TOOLCHAIN_ARCHIVE=$(ls /home/openwrt/source/bin/targets/ipq806x/generic/openwrt-toolchain-*.tar.zst)
           echo "TOOLCHAIN_ARCHIVE=$TOOLCHAIN_ARCHIVE" >> "$GITHUB_OUTPUT"'
-        shell: bash
         working-directory: /home/openwrt/source
       - name: upload artifact
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
