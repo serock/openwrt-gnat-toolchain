@@ -1,0 +1,97 @@
+name: build ipq806x generic toolchain
+on:
+  workflow_dispatch:
+    inputs:
+      openwrt_tag:
+        description: 'A Git tag of an OpenWrt release'
+        required: true
+        type: choice
+        options:
+          - v25.12.6
+        default: v25.12.6
+      alpine_image_tag:
+        description: 'A tag of an Alpine Docker Official Image'
+        required: true
+        type: choice
+        options:
+          - '3.22'
+        default: '3.22'
+      gcc_patch_dir:
+        description: 'The directory for GCC patches'
+        required: true
+        type: choice
+        options:
+          - patches-14.x
+        default: patches-14.x
+env:
+  GCC_PATCH_DIR: ${{ inputs.gcc_patch_dir }}
+  OPENWRT_TAG: ${{ inputs.openwrt_tag }}
+permissions:
+  contents: read
+jobs:
+  build-openwrt-gnat-toolchain:
+    name: build openwrt gnat toolchain
+    runs-on: ubuntu-latest
+    container:
+      image: alpine:${{ inputs.alpine_image_tag }}
+    steps:
+      - name: install build prerequisites
+        run: |
+          apk --quiet update
+          apk --quiet add argp-standalone bash bzip2 coreutils diffutils file findutils \
+            g++ gawk gcc gcc-gnat git grep gzip linux-headers make musl-fts-dev \
+            musl-libintl musl-obstack-dev ncurses-dev patch perl python3 rsync tar \
+            unzip wget
+      - name: add unprivileged user
+        run: adduser -g OpenWrt -s /bin/bash -D openwrt
+      - name: check out openwrt-gnat-toolchain
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      - name: clone openwrt
+        run: su openwrt -c 'git clone --quiet --branch $OPENWRT_TAG --depth 1 https://github.com/openwrt/openwrt.git source'
+        working-directory: /home/openwrt
+      - name: update openwrt feeds
+        run: su openwrt -c './scripts/feeds update -a'
+        working-directory: /home/openwrt/source
+      - name: install openwrt feeds
+        run: su openwrt -c './scripts/feeds install -a'
+        working-directory: /home/openwrt/source
+      - name: apply patches
+        run: |
+          su openwrt -c 'cp "$GITHUB_WORKSPACE/995-gnat-musl-libc.patch" ./toolchain/gcc/$GCC_PATCH_DIR
+          cp "$GITHUB_WORKSPACE/openwrt-disable-linux-build.patch" .
+          cp "$GITHUB_WORKSPACE/openwrt-enable-gnat-ada-compiler.patch" .
+          patch --strip=1 --input=openwrt-disable-linux-build.patch
+          patch --strip=1 --input=openwrt-enable-gnat-ada-compiler.patch
+          rm openwrt-disable-linux-build.patch
+          rm openwrt-enable-gnat-ada-compiler.patch'
+        working-directory: /home/openwrt/source
+      - name: configure openwrt
+        run: |
+          su openwrt -c 'cp "$GITHUB_WORKSPACE/diffconfig-ipq806x-generic-xr500" .config
+          make defconfig'
+        working-directory: /home/openwrt/source
+      - name: build toolchain
+        run: |
+          su openwrt -c 'make toolchain/download
+          make --jobs=3 toolchain/install'
+        working-directory: /home/openwrt/source
+      - name: create toolchain archive
+        run: |
+          su openwrt -c 'make target/install'
+        working-directory: /home/openwrt/source
+      - name: get gcc version
+        id: gcc_version
+        run: |
+          GCC_ARCHIVE=$(ls -1 /home/openwrt/source/dl/gcc-*.tar.xz | head --lines=1)
+          GCC_VERSION="${GCC_ARCHIVE#*-}"
+          GCC_VERSION="${GCC_VERSION%.tar.xz}"
+          echo "GCC_VERSION=$GCC_VERSION" >> "$GITHUB_OUTPUT"
+      - name: upload artifact
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        with:
+          path: /home/openwrt/source/bin/targets/ipq806x/generic/openwrt-toolchain-ipq806x-generic_gcc-${{ steps.gcc_version.outputs.GCC_VERSION }}_musl_eabi.Linux-x86_64.tar.zst
+          if-no-files-found: error
+          retention-days: 1
+          overwrite: true
+          archive: false
+
