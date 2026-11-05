@@ -1,0 +1,73 @@
+name: release
+on:
+  workflow_dispatch:
+    inputs:
+      gcc_version:
+        description: 'The version of GCC used by OpenWrt'
+        required: true
+        type: choice
+        options:
+          - 14.3.0
+        default: 14.3.0
+      release_tag:
+        description: 'Existing Git tag for a release'
+        required: true
+        type: string
+env:
+  GCC_VERSION: ${{ inputs.gcc_version }}
+  RELEASE_TAG: ${{ inputs.release_tag }}
+permissions:
+  contents: read
+jobs:
+  release-openwrt-gnat-toolchains:
+    name: release openwrt gnat toolchains
+    permissions:
+      actions: read
+      contents: write
+    runs-on: ubuntu-latest
+    steps:
+      - name: check out openwrt-gnat-toolchain
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      - name: get ath79 workflow run id
+        id: workflow_run_id_1
+        run: |
+          WORKFLOW_RUN_ID=$(gh run list --workflow 'build ath79 generic toolchain' --status success --json databaseId --jq '.[0].databaseId')
+          if [ -z "$WORKFLOW_RUN_ID" ]; then
+            echo 'No workflow run ID was found.'
+            exit 1
+          fi
+          echo "WORKFLOW_RUN_ID=$WORKFLOW_RUN_ID" >> "$GITHUB_OUTPUT"
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - name: download ath79 artifact
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333
+        with:
+          name: openwrt-toolchain-ath79-generic_gcc-${{ inputs.gcc_version }}_musl.Linux-x86_64.tar.zst
+          path: target
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          run-id: ${{ steps.workflow_run_id_1.outputs.WORKFLOW_RUN_ID }}
+          skip-decompress: true
+      - name: get ipq806x workflow run id
+        id: workflow_run_id_2
+        run: |
+          WORKFLOW_RUN_ID=$(gh run list --workflow 'build ipq806x generic toolchain' --status success --json databaseId --jq '.[0].databaseId')
+          if [ -z "$WORKFLOW_RUN_ID" ]; then
+            echo 'No workflow run ID was found.'
+            exit 1
+          fi
+          echo "WORKFLOW_RUN_ID=$WORKFLOW_RUN_ID" >> "$GITHUB_OUTPUT"
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - name: download ipq806x artifact
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333
+        with:
+          name: openwrt-toolchain-ipq806x-generic_gcc-${{ inputs.gcc_version }}_musl_eabi.Linux-x86_64.tar.zst
+          path: target
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          run-id: ${{ steps.workflow_run_id_2.outputs.WORKFLOW_RUN_ID }}
+          skip-decompress: true
+      - name: create release with binary build artifacts
+        run: |
+          gh release create "$RELEASE_TAG" ./target/*.tar.zst --title "$RELEASE_TAG" --fail-on-no-commits --verify-tag
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
